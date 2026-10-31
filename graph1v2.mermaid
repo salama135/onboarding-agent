@@ -1,0 +1,24 @@
+---
+config:
+  flowchart:
+    curve: linear
+---
+graph TD;
+        __start__([<p>__start__</p>]):::first
+        hr_desk(hr_desk)
+        order_laptop(order_laptop)
+        setup_accounts(setup_accounts)
+        assign_buddy(assign_buddy)
+        meet_manager(meet_manager)
+        __end__([<p>__end__</p>]):::last
+        __start__ --> hr_desk;
+        assign_buddy --> meet_manager;
+        hr_desk -.-> order_laptop;
+        hr_desk -.-> setup_accounts;
+        order_laptop --> setup_accounts;
+        setup_accounts -.-> assign_buddy;
+        setup_accounts -.-> meet_manager;
+        meet_manager --> __end__;
+        classDef default fill:#f2f0ff,line-height:1.2
+        classDef first fill-opacity:0
+        classDef last fill:#bfb6fc
