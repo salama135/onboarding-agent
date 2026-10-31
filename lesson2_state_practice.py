@@ -49,6 +49,7 @@ builder.add_edge("hr_desk", "it_desk")
 builder.add_edge("hr_desk", "facilities_desk")
 builder.add_edge("hr_desk", "parking_desk")
 builder.add_edge(["it_desk", "facilities_desk", "parking_desk"], "meet_manager")  # waits for all three
+builder.add_edge("meet_manager", END)
 
 graph = builder.compile()
 
