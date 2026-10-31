@@ -15,10 +15,11 @@ graph TD;
         assign_buddy --> meet_manager;
         hr_desk -.-> order_laptop;
         hr_desk -.-> setup_accounts;
+        meet_manager -.-> __end__;
         order_laptop --> setup_accounts;
         setup_accounts -.-> assign_buddy;
         setup_accounts -.-> meet_manager;
-        meet_manager --> __end__;
+        meet_manager -.-> meet_manager;
         classDef default fill:#f2f0ff,line-height:1.2
         classDef first fill-opacity:0
         classDef last fill:#bfb6fc

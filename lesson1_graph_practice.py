@@ -5,16 +5,19 @@ from langgraph.graph import END, START, StateGraph
 
 llm = ChatOllama(model="llama3.2")
 
+MIN_WELCOME_LENGTH = 20
+MAX_WELCOME_ATTEMPTS = 3
 
-# 1. The clipboard
+
 class OnboardingState(TypedDict):
     name: str
     role: str
     has_laptop: bool
     checklist: list[str]
+    welcome_note: str
+    welcome_attempts: int
 
 
-# 2. The desks (nodes): receive the state, return only the keys they change
 def hr_desk(state: OnboardingState):
     return {"checklist": state["checklist"] + [f"HR welcomed {state['name']}"]}
 
@@ -24,24 +27,27 @@ def order_laptop(state: OnboardingState):
 def setup_accounts(state: OnboardingState):
     return {"checklist": state["checklist"] + ["Email & Slack accounts created"]}
 
+def assign_buddy(state: OnboardingState):
+    return {"checklist": state["checklist"] + [f"Engineering buddy assigned to {state['name']}"]}
+
 def meet_manager(state: OnboardingState):
     reply = llm.invoke(f"Write a 2-sentence friendly welcome from a manager to {state['name']}.")
-    return {"checklist": state["checklist"] + [f"Manager: {reply.content}"]}
-
-def assign_buddy(state: OnboardingState):
-    return {"checklist": state["checklist"] + ["Email & Slack accounts created"], "role": state.rol}
+    return {"welcome_note": reply.content, "welcome_attempts": state["welcome_attempts"] + 1}
 
 
-# 3. The decision (router): returns the name of the next node
 def laptop_check(state: OnboardingState) -> str:
     return "setup_accounts" if state["has_laptop"] else "order_laptop"
 
 def assign_buddy_check(state: OnboardingState) -> str:
     return "assign_buddy" if state["role"] == "engineer" else "meet_manager"
 
+def welcome_check(state: OnboardingState) -> str:
+    too_short = len(state["welcome_note"]) < MIN_WELCOME_LENGTH
+    if too_short and state["welcome_attempts"] < MAX_WELCOME_ATTEMPTS:
+        return "meet_manager"
+    return END
 
 
-# 4. Connect everything
 builder = StateGraph(OnboardingState)
 builder.add_node("hr_desk", hr_desk)
 builder.add_node("order_laptop", order_laptop)
@@ -54,16 +60,20 @@ builder.add_conditional_edges("hr_desk", laptop_check, ["order_laptop", "setup_a
 builder.add_edge("order_laptop", "setup_accounts")
 builder.add_conditional_edges("setup_accounts", assign_buddy_check, ["assign_buddy", "meet_manager"])
 builder.add_edge("assign_buddy", "meet_manager")
-builder.add_edge("meet_manager", END)
+builder.add_conditional_edges("meet_manager", welcome_check, ["meet_manager", END])
 
 graph = builder.compile()
 
-# 5. Run and visualize
+
 if __name__ == "__main__":
-    # result = graph.invoke({"name": "Sara", "has_laptop": False, "checklist": []})
-    result = graph.invoke({"name": "Sara", "role": "tester", "has_laptop": True, "checklist": []})
-    print(result["checklist"])
-    for item in result["checklist"]:
-        print("-", item)
+    for role, has_laptop in [("engineer", False), ("tester", True)]:
+        result = graph.invoke({
+            "name": "Sara", "role": role, "has_laptop": has_laptop,
+            "checklist": [], "welcome_note": "", "welcome_attempts": 0,
+        })
+        print(f"\n=== {role} (attempts: {result['welcome_attempts']}) ===")
+        for item in result["checklist"]:
+            print("-", item)
+        print("Welcome:", result["welcome_note"])
 
     print(graph.get_graph().draw_mermaid())  # paste into https://mermaid.live
