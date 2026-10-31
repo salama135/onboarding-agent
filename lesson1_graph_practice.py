@@ -76,4 +76,4 @@ if __name__ == "__main__":
             print("-", item)
         print("Welcome:", result["welcome_note"])
 
-    print(graph.get_graph().draw_mermaid())  # paste into https://mermaid.live
+    # print(graph.get_graph().draw_mermaid())  # paste into https://mermaid.live

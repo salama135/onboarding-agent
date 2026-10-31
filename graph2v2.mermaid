@@ -1,0 +1,24 @@
+---
+config:
+  flowchart:
+    curve: linear
+---
+graph TD;
+        __start__([<p>__start__</p>]):::first
+        hr_desk(hr_desk)
+        it_desk(it_desk)
+        facilities_desk(facilities_desk)
+        meet_manager(meet_manager)
+        parking_desk(parking_desk)
+        __end__([<p>__end__</p>]):::last
+        __start__ --> hr_desk;
+        facilities_desk --> meet_manager;
+        hr_desk --> facilities_desk;
+        hr_desk --> it_desk;
+        hr_desk --> parking_desk;
+        it_desk --> meet_manager;
+        parking_desk --> meet_manager;
+        meet_manager --> __end__;
+        classDef default fill:#f2f0ff,line-height:1.2
+        classDef first fill-opacity:0
+        classDef last fill:#bfb6fc
