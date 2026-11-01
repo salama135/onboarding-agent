@@ -40,6 +40,7 @@ def build_agent(checkpointer):
             "You are an onboarding assistant. Keep answers to 1-2 sentences. "
             "When the user finishes a task, call complete_task once per task. "
             "When asked about progress, call get_progress."
+            "Split combined tasks: 'X and Y' means two separate complete_task calls."
         ),
         state_schema=OnboardingAgentState,
         checkpointer=checkpointer,
@@ -57,12 +58,18 @@ def show_history(agent, config):
     for i, snap in enumerate(agent.get_state_history(config)):
         meta = snap.metadata or {}
         msgs = snap.values.get("messages", [])
-        preview = msgs[-1].content[:40].replace("\n", " ") if msgs else ""
         print(
             f"  [{i:>2}] step={meta.get('step'):>2} source={meta.get('source', ''):<6} "
-            f"next={str(snap.next):<12} msgs={len(msgs):>2} "
-            f"tasks={snap.values.get('completed_tasks', [])} | {preview}"
+            f"next={str(snap.next):<16} msgs={len(msgs):>2} "
+            f"tasks={snap.values.get('completed_tasks', [])} | {describe(msgs[-1]) if msgs else ''}"
         )
+
+
+def describe(msg) -> str:
+    if getattr(msg, "tool_calls", None):
+        return "CALL " + ", ".join(f"{c['name']}({c['args']})" for c in msg.tool_calls)
+    text = str(msg.content)[:40].replace("\n", " ")
+    return f"{msg.type}: {text}"
 
 
 def main():
