@@ -19,11 +19,17 @@ class OnboardingState(TypedDict):
     checklist: Annotated[list[str], operator.add]
 
 
+STANDARD_LAPTOPS = {"MacBook Air", "ThinkPad T14"}
+
+
 def hr_desk(state: OnboardingState):
     return {"checklist": [f"HR welcomed {state['name']}"]}
 
 
 def manager_approval(state: OnboardingState):
+    print("  >> manager_approval node started")
+    if state["laptop_model"] in STANDARD_LAPTOPS:
+        return {"approved": True, "checklist": [f"Auto-approved standard laptop {state['laptop_model']}"]}
     decision = interrupt({
         "question": f"Approve a {state['laptop_model']} for {state['name']} ({state['role']})?",
         "options": ["approve", "edit", "reject"],
@@ -92,9 +98,10 @@ def main():
         config = {"configurable": {"thread_id": thread_id}}
 
         if mode == "start":
+            laptop = sys.argv[3] if len(sys.argv) > 3 else "MacBook Pro 16"
             result = graph.invoke({
                 "name": thread_id.capitalize(), "role": "engineer",
-                "laptop_model": "MacBook Pro 16", "approved": False, "checklist": [],
+                "laptop_model": laptop, "approved": False, "checklist": [],
             }, config)
         elif mode == "review":
             snap = graph.get_state(config)
