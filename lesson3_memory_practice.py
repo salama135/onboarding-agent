@@ -1,5 +1,5 @@
 import operator
-from typing import Annotated
+from typing import Annotated, Literal, get_args
 
 from langchain.agents import AgentState, create_agent
 from langchain.agents.middleware import (
@@ -12,18 +12,34 @@ from langchain_ollama import ChatOllama
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 
+
+TaskName = Literal[
+    "HR paperwork",
+    "Laptop setup",
+    "Email & Slack access",
+    "VPN access",
+    "Security training",
+    "Meet manager",
+    "Meet the team",
+]
+ONBOARDING_TASKS = list(get_args(TaskName))
+
 class OnboardingAgentState(AgentState):
     role: str
     employee_name: str
-    completed_tasks: Annotated[list[str], operator.add]
+    completed_tasks: Annotated[list[str], add_unique]
 
 
-STRATEGY = "delete"          # try: "none", "window", "summary"
+STRATEGY = "facts"          # try: "none", "window", "summary"
 KEEP_LAST_MESSAGES = 6
 MAX_STATE_MESSAGES = 10
 MAX_TOKENS = 1000
 
 model = ChatOllama(model="llama3.2", num_ctx=8192)
+
+
+def add_unique(existing: list[str], new: list[str]) -> list[str]:
+    return existing + [t for t in new if t not in existing]
 
 
 def recent_turns(messages, keep):
@@ -78,17 +94,27 @@ def log_context_size(request, handler):
 @dynamic_prompt
 def onboarding_facts(request) -> str:
     s = request.state
+    done = s.get("completed_tasks", [])
+    pending = [t for t in ONBOARDING_TASKS if t not in done]
     return (
         "You are a friendly onboarding assistant. Keep answers to 1-2 sentences.\n"
-        "When the user says they finished a task, call complete_task.\n"
         f"Employee: {s.get('employee_name', 'unknown')} ({s.get('role', 'unknown')}).\n"
-        f"Completed: {', '.join(s.get('completed_tasks', [])) or 'none'}."
+        f"Completed tasks: {', '.join(done) or 'none'}.\n"
+        f"Pending tasks: {', '.join(pending) or 'none'}.\n"
+        "Rules:\n"
+        "- Only call complete_task when the user clearly says they FINISHED a pending task.\n"
+        "- Never call complete_task to answer a question. Answer from the lists above.\n"
+        "- The only valid tasks are the ones listed. Never invent tasks.\n"
+        "- When asked what to do next, suggest pending tasks."
     )
 
 
 @tool
-def complete_task(task: str, runtime: ToolRuntime[None, OnboardingAgentState]) -> Command:
-    """Mark one onboarding task as completed. Call once per task."""
+def complete_task(task: TaskName, runtime: ToolRuntime[None, OnboardingAgentState]) -> Command | str:
+    """Mark one onboarding task as completed.
+    Only call this when the user explicitly says they FINISHED the task. Never call it for questions."""
+    if task in runtime.state.get("completed_tasks", []):
+        return f"'{task}' is already completed. Do not mark it again."
     return Command(update={
         "completed_tasks": [task],
         "messages": [ToolMessage(f"Marked '{task}' as done.", tool_call_id=runtime.tool_call_id)],
@@ -96,7 +122,7 @@ def complete_task(task: str, runtime: ToolRuntime[None, OnboardingAgentState]) -
 
 
 summarizer = SummarizationMiddleware(
-    model=ChatOllama(model="llama3.2", num_ctx=8192),
+    model=ChatOllama(model="qwen2.5:7b", num_ctx=8192),
     trigger=("tokens", 600),          # deliberately tiny so you see it fire
     keep=("messages", KEEP_LAST_MESSAGES),
 )
