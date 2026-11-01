@@ -33,6 +33,7 @@ def log_context_size(request, handler):
 summarizer = SummarizationMiddleware(
     model=ChatOllama(model="llama3.2", num_ctx=8192),
     trigger=("tokens", 600),          # deliberately tiny so you see it fire
+    # trigger=("messages", 8),
     keep=("messages", KEEP_LAST_MESSAGES),
 )
 
