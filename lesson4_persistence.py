@@ -75,7 +75,8 @@ def describe(msg) -> str:
 def main():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-    agent = build_agent(SqliteSaver(conn))
+    checkpointer = SqliteSaver(conn)
+    agent = build_agent(checkpointer)
 
     thread_id = input("Thread id (e.g. sara): ").strip() or "sara"
     base_config = {"configurable": {"thread_id": thread_id}}
@@ -87,8 +88,8 @@ def main():
               f"completed: {existing.get('completed_tasks', [])}")
     else:
         print(f"New conversation '{thread_id}'")
-    print("Commands: /state  /history  /rewind N  quit")
-
+    print("Commands: /state  /history  /rewind N  /forget  quit")
+    
     while True:
         text = input("\nYou: ").strip()
         if text.lower() in {"quit", "exit"}:
@@ -104,7 +105,13 @@ def main():
             config = snaps[int(text.split()[1])].config
             print("  Next message will branch from that checkpoint.")
             continue
-
+        if text == "/forget":
+            if input(f"  Delete ALL history for '{thread_id}'? (y/n): ").strip().lower() == "y":
+                checkpointer.delete_thread(thread_id)
+                config = base_config  # discard any pending /rewind target
+                print(f"  Deleted every checkpoint for '{thread_id}'.")
+            continue
+        
         result = agent.invoke({"messages": [{"role": "user", "content": text}]}, config)
         config = base_config  # after a fork, the new branch is the thread's latest checkpoint
         print("Agent:", result["messages"][-1].content)
