@@ -1,11 +1,22 @@
-from langchain.agents import create_agent
-from langchain.agents.middleware import SummarizationMiddleware, wrap_model_call
-from langchain.messages import HumanMessage
+import operator
+from typing import Annotated
+
+from langchain.agents import AgentState, create_agent
+from langchain.agents.middleware import (
+    SummarizationMiddleware, before_model, dynamic_prompt, wrap_model_call,
+)
+from langchain.messages import HumanMessage, RemoveMessage, ToolMessage
+from langchain.tools import ToolRuntime, tool
 from langchain_core.messages.utils import count_tokens_approximately
 from langchain_ollama import ChatOllama
 from langgraph.checkpoint.memory import InMemorySaver
-from langchain.agents.middleware import before_model
-from langchain.messages import RemoveMessage
+from langgraph.types import Command
+
+class OnboardingAgentState(AgentState):
+    role: str
+    employee_name: str
+    completed_tasks: Annotated[list[str], operator.add]
+
 
 STRATEGY = "delete"          # try: "none", "window", "summary"
 KEEP_LAST_MESSAGES = 6
@@ -64,6 +75,26 @@ def log_context_size(request, handler):
     return handler(request)
 
 
+@dynamic_prompt
+def onboarding_facts(request) -> str:
+    s = request.state
+    return (
+        "You are a friendly onboarding assistant. Keep answers to 1-2 sentences.\n"
+        "When the user says they finished a task, call complete_task.\n"
+        f"Employee: {s.get('employee_name', 'unknown')} ({s.get('role', 'unknown')}).\n"
+        f"Completed: {', '.join(s.get('completed_tasks', [])) or 'none'}."
+    )
+
+
+@tool
+def complete_task(task: str, runtime: ToolRuntime[None, OnboardingAgentState]) -> Command:
+    """Mark one onboarding task as completed. Call once per task."""
+    return Command(update={
+        "completed_tasks": [task],
+        "messages": [ToolMessage(f"Marked '{task}' as done.", tool_call_id=runtime.tool_call_id)],
+    })
+
+
 summarizer = SummarizationMiddleware(
     model=ChatOllama(model="llama3.2", num_ctx=8192),
     trigger=("tokens", 600),          # deliberately tiny so you see it fire
@@ -76,24 +107,32 @@ middleware = {
     "summary": [summarizer, log_context_size],
     "delete": [delete_old_messages, log_context_size],
     "tokens": [token_window, log_context_size],    
+    "facts": [onboarding_facts, sliding_window, log_context_size],
 }[STRATEGY]
+
 
 agent = create_agent(
     model=model,
-    tools=[],
-    system_prompt="You are a friendly onboarding assistant. Keep answers to 1-2 sentences.",
+    tools=[complete_task],
     middleware=middleware,
+    state_schema=OnboardingAgentState,
     checkpointer=InMemorySaver(),
 )
 
 config = {"configurable": {"thread_id": "sara-day-1"}}
 
+
 if __name__ == "__main__":
     print(f"Strategy: {STRATEGY}. Type 'quit' to stop.")
+    first_turn = True
     while True:
         text = input("\nYou: ").strip()
         if text.lower() in {"quit", "exit"}:
             break
-        result = agent.invoke({"messages": [{"role": "user", "content": text}]}, config)
+        payload = {"messages": [{"role": "user", "content": text}]}
+        if first_turn:
+            payload |= {"employee_name": "Sara", "role": "data engineer", "completed_tasks": []}
+            first_turn = False
+        result = agent.invoke(payload, config)
         print("Agent:", result["messages"][-1].content)
-        print(f"  [state saved] {len(result['messages'])} messages")
+        print(f"  [state saved] {len(result['messages'])} messages | completed: {result['completed_tasks']}")
